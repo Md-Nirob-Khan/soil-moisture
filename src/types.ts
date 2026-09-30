@@ -117,7 +117,7 @@ export interface SoilMoistureTrendPoint {
   critical: number;
 }
 
-export type WeatherLocationSource = 'geolocation' | 'farm';
+export type WeatherLocationSource = 'farm' | 'geolocation' | 'default';
 
 export interface WeatherSnapshot {
   latitude: number;

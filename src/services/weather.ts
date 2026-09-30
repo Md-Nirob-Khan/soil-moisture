@@ -41,8 +41,6 @@ interface OpenMeteoResponse {
   reason?: string;
 }
 
-let cachedGeolocation: { lat: number; lng: number } | 'denied' | null = null;
-
 function round(value: number, digits = 0): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
@@ -122,49 +120,32 @@ function formatDayLabel(isoDate: string, indexFromToday: number): string {
   return date.toLocaleDateString([], { weekday: 'long' });
 }
 
-function farmFallbackCoordinates(farm: Farm): { lat: number; lng: number } {
-  if (farm.coordinates && Number.isFinite(farm.coordinates.lat) && Number.isFinite(farm.coordinates.lng)) {
-    return farm.coordinates;
-  }
-  return DEFAULT_FARM_COORDINATES;
+function hasValidCoordinates(farm: Farm): farm is Farm & { coordinates: { lat: number; lng: number } } {
+  return !!farm.coordinates && Number.isFinite(farm.coordinates.lat) && Number.isFinite(farm.coordinates.lng);
 }
 
-export function getFarmFallbackCoordinates(farm: Farm): { lat: number; lng: number } {
-  return farmFallbackCoordinates(farm);
-}
-
-export function getUserCoordinates(
-  fallback: { lat: number; lng: number }
-): Promise<{ lat: number; lng: number; source: WeatherLocationSource }> {
-  if (cachedGeolocation && cachedGeolocation !== 'denied') {
-    return Promise.resolve({ ...cachedGeolocation, source: 'geolocation' });
-  }
-  if (cachedGeolocation === 'denied') {
-    return Promise.resolve({ ...fallback, source: 'farm' });
-  }
-
+function getDeviceCoordinates(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      cachedGeolocation = 'denied';
-      resolve({ ...fallback, source: 'farm' });
+      resolve(null);
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        cachedGeolocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-        resolve({ ...cachedGeolocation, source: 'geolocation' });
-      },
-      () => {
-        cachedGeolocation = 'denied';
-        resolve({ ...fallback, source: 'farm' });
-      },
+      (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      () => resolve(null),
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
     );
   });
+}
+
+// Saved farm coordinates (set by FarmLocationSelector) win; device GPS only if the farm has none.
+export async function resolveWeatherLocation(
+  farm: Farm
+): Promise<{ lat: number; lng: number; source: WeatherLocationSource }> {
+  if (hasValidCoordinates(farm)) return { ...farm.coordinates, source: 'farm' };
+  const device = await getDeviceCoordinates();
+  if (device) return { ...device, source: 'geolocation' };
+  return { ...DEFAULT_FARM_COORDINATES, source: 'default' };
 }
 
 function findHourIndex(times: string[], currentTime: string): number {
@@ -353,8 +334,7 @@ export async function fetchOpenMeteoWeather(
 }
 
 export async function loadWeatherForFarm(farm: Farm): Promise<WeatherSnapshot> {
-  const fallback = farmFallbackCoordinates(farm);
-  const location = await getUserCoordinates(fallback);
+  const location = await resolveWeatherLocation(farm);
   const forecast = await fetchOpenMeteoWeather(location.lat, location.lng);
   return {
     ...forecast,

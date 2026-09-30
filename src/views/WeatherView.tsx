@@ -101,7 +101,9 @@ export const WeatherView: React.FC<WeatherViewProps> = ({
           <p className="text-[11px] text-slate-500 mt-0.5 ml-5">
             {locationSource === 'geolocation'
               ? 'Using your browser location'
-              : 'Using saved farm coordinates'}
+              : locationSource === 'default'
+                ? 'Using default location. Set farm coordinates for accurate data'
+                : 'Using saved farm coordinates'}
           </p>
         </div>
 

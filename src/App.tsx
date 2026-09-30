@@ -372,6 +372,9 @@ export default function App() {
           userEmail={userEmail}
           onLogout={() => setCurrentView('login')}
           onNavigateToAllSteps={() => setCurrentView('all-steps')}
+          weather={weather}
+          weatherLoading={weatherStatus === 'loading'}
+          weatherError={weatherError}
         />
 
         {/* Dynamic Main Body Content */}

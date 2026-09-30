@@ -14,7 +14,7 @@ import {
   Flame,
   AlertTriangle
 } from 'lucide-react';
-import { Farm, FarmZone, AlertItem } from '../types';
+import { Farm, FarmZone, AlertItem, WeatherSnapshot } from '../types';
 
 interface TopHeaderProps {
   currentFarm: Farm;
@@ -28,6 +28,9 @@ interface TopHeaderProps {
   userEmail: string;
   onLogout: () => void;
   onNavigateToAllSteps?: () => void;
+  weather?: WeatherSnapshot | null;
+  weatherLoading?: boolean;
+  weatherError?: string | null;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -42,6 +45,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   userEmail,
   onLogout,
   onNavigateToAllSteps,
+  weather = null,
+  weatherLoading = false,
+  weatherError = null,
 }) => {
   const [zoneDropdownOpen, setZoneDropdownOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -135,12 +141,26 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </div>
             <div className="leading-tight">
               <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                <span>31°C</span>
-                <span className="text-slate-400 font-normal">•</span>
-                <span className="text-slate-600 font-medium">Sunny</span>
+                {weather ? (
+                  <>
+                    <span>{weather.current.temperature}°C</span>
+                    <span className="text-slate-400 font-normal">•</span>
+                    <span className="text-slate-600 font-medium">{weather.current.condition}</span>
+                  </>
+                ) : weatherLoading ? (
+                  <span className="inline-block h-3.5 w-24 rounded bg-slate-200 animate-pulse" />
+                ) : (
+                  <span className="text-slate-600 font-medium">Weather unavailable</span>
+                )}
               </div>
               <div className="text-[11px] text-blue-600 font-semibold flex items-center gap-1">
-                <span>Rain chance 80% within 6 hours</span>
+                {weather ? (
+                  <span>Rain chance {weather.current.rainProbability}% within 6 hours</span>
+                ) : weatherLoading ? (
+                  <span className="inline-block h-3 w-32 rounded bg-slate-200 animate-pulse" />
+                ) : (
+                  <span className="text-red-600" title={weatherError ?? undefined}>Live data failed to load</span>
+                )}
               </div>
             </div>
           </div>
