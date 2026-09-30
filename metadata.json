@@ -1,0 +1,6 @@
+{
+  "name": "AgriAI",
+  "description": "AI Smart Irrigation Interface - Smarter Water. Greener Tomorrow. Commercial precision irrigation SaaS with IoT sensor simulation, explainable AI, and human-in-the-loop control.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
