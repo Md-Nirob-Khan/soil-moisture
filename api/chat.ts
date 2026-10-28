@@ -272,6 +272,7 @@ export default async function handler(req: ChatRequest, res: ServerResponse): Pr
     const availableModelsPromise = discoverFlashModels(apiKey, deadline);
     const models = [
       process.env.GEMINI_MODEL,
+      'gemini-3.5-flash-lite',
       'gemini-flash-latest',
       'gemini-flash-lite-latest',
       ...(await availableModelsPromise),
