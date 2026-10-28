@@ -1,33 +1,42 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Sparkles, 
-  Send, 
-  User, 
-  Bot, 
-  Droplets, 
-  CloudSun, 
-  ShieldAlert, 
-  Thermometer, 
-  CheckCircle2,
-  RefreshCw,
-  Terminal,
-  Paperclip
-} from 'lucide-react';
-import { ChatMessage, SensorData, FarmZone } from '../types';
-import { INITIAL_CHAT_MESSAGES } from '../data/mockData';
+import { Sparkles, Send, User, Bot } from 'lucide-react';
+import {
+  AlertItem,
+  AIRecommendation,
+  ChatMessage,
+  Farm,
+  FarmZone,
+  SensorData,
+  WeatherSnapshot,
+} from '../types';
 
 interface AIAssistantViewProps {
+  farm: Farm;
+  recommendation: AIRecommendation;
+  weather: WeatherSnapshot | null;
+  alerts: AlertItem[];
   sensorData: SensorData;
   selectedZone: FarmZone;
 }
 
 export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
+  farm,
+  recommendation,
+  weather,
+  alerts,
   sensorData,
   selectedZone,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>([{
+    id: 'welcome',
+    sender: 'ai',
+    text: `Hi! I'm your AgriAI assistant for ${farm.name}. Ask me about irrigation, soil moisture, weather or alerts for ${selectedZone.name}.`,
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  }]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isGeminiAvailable, setIsGeminiAvailable] = useState(true);
+  const [offlineReason, setOfflineReason] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -39,104 +48,132 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   }, [messages, isTyping]);
 
   const quickQuestions = [
-    'Should I irrigate the tomato field today?',
-    'What happens if it doesn’t rain?',
-    'What is the current soil moisture in Zone 3?',
-    'Explain the potential leak detected in Zone 2',
-    'How much water did we save this week?',
-    'What is today’s temperature and evapotranspiration?',
+    `Should I irrigate ${selectedZone.name} today?`,
+    `What is the soil moisture in ${selectedZone.name}?`,
+    `What is the rain forecast for ${farm.name}?`,
+    `Why is irrigation recommended for ${selectedZone.cropType}?`,
   ];
 
-  // Natural agronomic AI responses generator
-  const generateAIResponse = (userQuery: string): { text: string; dataPoints?: Array<{ label: string; value: string }> } => {
-    const q = userQuery.toLowerCase();
+  const buildContext = () => ({
+    farm: {
+      name: farm.name,
+      location: farm.location,
+      acres: farm.acres,
+      crops: farm.cropTypes,
+    },
+    selectedZone: {
+      name: selectedZone.name,
+      crop: selectedZone.cropType,
+      area: selectedZone.areaAcres,
+      status: selectedZone.status,
+      optimalRange: selectedZone.optimalRange,
+      lastIrrigationHoursAgo: selectedZone.lastIrrigationHoursAgo,
+      valveOpen: selectedZone.valveOpen,
+    },
+    otherZones: farm.zones
+      .filter((zone) => zone.id !== selectedZone.id)
+      .map(({ name, cropType, status, soilMoisture }) => ({
+        name,
+        crop: cropType,
+        status,
+        soilMoisture,
+      })),
+    sensorData,
+    recommendation: {
+      title: recommendation.title,
+      actionType: recommendation.actionType,
+      delayHours: recommendation.delayHours,
+      confidence: recommendation.confidence,
+      waterLiters: recommendation.recommendedWaterAmountLiters,
+      durationMinutes: recommendation.recommendedDurationMinutes,
+      waterSavedLiters: recommendation.estimatedWaterSavedLiters,
+      factors: recommendation.factors,
+      explanationText: recommendation.explanationText,
+    },
+    weather: weather
+      ? {
+        current: weather.current,
+        next12Hourly: weather.hourly.slice(0, 12),
+        next7Daily: weather.daily.slice(0, 7),
+      }
+      : null,
+    unreadAlerts: alerts.filter((alert) => !alert.read),
+    localTime: new Date().toLocaleString(),
+  });
 
-    if (q.includes('tomato') || (q.includes('irrigate') && q.includes('today'))) {
+  const generateOfflineAnswer = (
+    query: string
+  ): { text: string; dataPoints?: Array<{ label: string; value: string }> } => {
+    const normalizedQuery = query.toLowerCase();
+    const rainProbability = weather?.current.rainProbability ?? sensorData.rainProbability;
+    const temperature = weather?.current.temperature ?? sensorData.temperature;
+    const soilMoisture = sensorData.soilMoisture;
+    const optimalRange = `${selectedZone.optimalRange[0]}–${selectedZone.optimalRange[1]}%`;
+    const livePoints = [
+      { label: 'Soil moisture', value: `${soilMoisture}%` },
+      { label: 'Rain chance', value: `${rainProbability}%` },
+      { label: 'Temperature', value: `${temperature}°C` },
+    ];
+
+    if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(query.trim())) {
+      return { text: `Hi! I’m AgriAI, currently in offline mode. I can help with irrigation, soil moisture, weather, or alerts for ${selectedZone.name}.` };
+    }
+
+    if (/irrigat|should i|water.*today/.test(normalizedQuery)) {
       return {
-        text: 'Irrigation is currently not recommended for the tomato field (Zone 3). Rainfall probability is 80% within the next six hours. Delaying irrigation saves approximately 320 liters of water without putting roots in drought distress.',
+        text: `For ${selectedZone.name}, soil moisture is ${soilMoisture}% against an optimal range of ${optimalRange}; the current rain chance is ${rainProbability}% and the temperature is ${temperature}°C. ${recommendation.explanationText} The current recommendation is ${recommendation.title}. You make the final irrigation decision.`,
         dataPoints: [
-          { label: 'Zone 3 Moisture', value: `${sensorData.soilMoisture}%` },
-          { label: 'Rainfront Probability', value: `${sensorData.rainProbability}% in 6h` },
-          { label: 'Projected Water Savings', value: '320 Liters' },
+          livePoints[0],
+          { label: 'Optimal range', value: optimalRange },
+          livePoints[1],
+          livePoints[2],
         ],
       };
     }
 
-    if (q.includes('rain') && (q.includes('not') || q.includes("doesn't") || q.includes('if it'))) {
+    if (/moisture|soil/.test(normalizedQuery)) {
       return {
-        text: 'I will continuously reassess soil moisture and weather telemetry every 5 minutes. If soil moisture falls below 22% and rain radar fails to materialize, I will immediately issue an automated recommendation to irrigate for 21 minutes.',
-        dataPoints: [
-          { label: 'Fail-safe Cutoff', value: '22% soil moisture' },
-          { label: 'Autonomous Polling', value: 'Active via LoRaWAN' },
-        ],
+        text: `${selectedZone.name} (${selectedZone.cropType}) has a soil moisture reading of ${soilMoisture}%, with an optimal range of ${optimalRange}.`,
+        dataPoints: [livePoints[0], { label: 'Optimal range', value: optimalRange }],
       };
     }
 
-    if (q.includes('moisture') || q.includes('zone 3') || q.includes('soil')) {
+    if (/alert|leak/.test(normalizedQuery)) {
+      const unreadAlerts = alerts.filter((alert) => !alert.read);
+      return unreadAlerts.length
+        ? {
+          text: `There ${unreadAlerts.length === 1 ? 'is' : 'are'} ${unreadAlerts.length} unread alert${unreadAlerts.length === 1 ? '' : 's'}: ${unreadAlerts.map((alert) => `${alert.title}: ${alert.message}`).join(' ')}`,
+        }
+        : { text: 'There are no unread alerts in the current farm data. I cannot confirm a leak without a related alert or sensor reading.' };
+    }
+
+    if (/rain|weather|forecast|temp/.test(normalizedQuery)) {
+      const forecast = weather?.hourly.slice(0, 12) ?? [];
+      const forecastSummary = forecast.length
+        ? ` The highest rain chance in the next 12 hourly readings is ${Math.max(...forecast.map((hour) => hour.rainProbability))}%.`
+        : ' An hourly forecast is not available.';
+      const condition = weather?.current.condition;
       return {
-        text: `Zone 3 (Tomato Field) currently registers ${sensorData.soilMoisture}% soil volumetric water content. Although below the optimal 40–60% zone, the crop is comfortably above the 20% permanent wilting point. Current decline rate is ~1.1% per hour.`,
-        dataPoints: [
-          { label: 'Current Moisture', value: `${sensorData.soilMoisture}%` },
-          { label: 'Target Optimal', value: '40–60%' },
-          { label: 'Time to Critical Limit', value: '~7 hours' },
-        ],
+        text: `Current conditions${condition ? ` are ${condition}` : ''}: ${temperature}°C and ${rainProbability}% rain chance.`
+          + forecastSummary,
+        dataPoints: [livePoints[1], livePoints[2]],
       };
     }
 
-    if (q.includes('leak') || q.includes('zone 2') || q.includes('alert')) {
+    if (/why|explain/.test(normalizedQuery)) {
       return {
-        text: 'Telemetry detected a 34% surge in volumetric flow rate in Zone 2 (Lettuce Patch) relative to baseline nozzle coefficient. This points to a potential manifold gasket fissure or cracked lateral emitter line. Inspecting Zone 2 is recommended.',
-        dataPoints: [
-          { label: 'Anomaly Delta', value: '+34% over baseline' },
-          { label: 'Estimated Unmeasured Loss', value: '64 L/hr' },
-          { label: 'Suggested Action', value: 'Inspect lateral line coupling' },
-        ],
+        text: `${recommendation.explanationText} For ${selectedZone.name}, the current readings are ${soilMoisture}% soil moisture, ${rainProbability}% rain chance, and ${temperature}°C.`,
+        dataPoints: livePoints,
       };
     }
 
-    if (q.includes('save') || q.includes('water') || q.includes('week') || q.includes('analytics')) {
-      return {
-        text: 'This week AgriAI saved 2,800 liters of water (21% total conservation) across all 4 zones compared to scheduled timer clocks. This translates to an estimated $142 utility saving and avoids nutrient runoff leaching.',
-        dataPoints: [
-          { label: 'Conserved Volume', value: '2,800 Liters / week' },
-          { label: 'Efficiency Gain', value: '+21% vs static timer' },
-        ],
-      };
-    }
-
-    if (q.includes('temp') || q.includes('weather') || q.includes('forecast')) {
-      return {
-        text: `Current ambient temperature is ${sensorData.temperature}°C with ${sensorData.humidity}% relative humidity. Peak solar irradiance is expected around 2:00 PM, followed by heavy cloud cover and 80% precipitation probability after 5:30 PM.`,
-        dataPoints: [
-          { label: 'Temperature', value: `${sensorData.temperature}°C` },
-          { label: 'Humidity', value: `${sensorData.humidity}%` },
-          { label: 'Atmospheric Pressure', value: '1013 hPa (falling)' },
-        ],
-      };
-    }
-
-    if (q.includes('tank') || q.includes('status') || q.includes('system')) {
-      return {
-        text: `The central water storage tank is at ${sensorData.waterTankLevel}% capacity (approx. 18,400 liters). All 4 solenoid valves, booster pumps, and IoT mesh nodes are reporting online with 100% signal strength.`,
-        dataPoints: [
-          { label: 'Reservoir Level', value: `${sensorData.waterTankLevel}%` },
-          { label: 'IoT Node Health', value: '4/4 Online' },
-        ],
-      };
-    }
-
-    // Default agronomic answer
     return {
-      text: `Based on current telemetry across ${selectedZone.name}, sensor levels indicate ${sensorData.soilMoisture}% moisture and ${sensorData.temperature}°C temperature. The AI irrigation recommendation engine recommends standing by for the 80% rain front before cycling valves.`,
-      dataPoints: [
-        { label: 'Primary Advice', value: 'Delay irrigation 6 hours' },
-        { label: 'AI Confidence', value: '87%' },
-      ],
+      text: `I’m in offline mode, so I can only answer from the farm readings currently available. Try asking about irrigation, soil moisture, weather, or unread alerts for ${selectedZone.name}.`,
     };
   };
 
-  const handleSendMessage = (textToSend?: string) => {
-    const query = textToSend || inputText;
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend ?? inputText).trim();
     if (!query.trim()) return;
 
     const userMsg: ChatMessage = {
@@ -149,19 +186,56 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setIsTyping(true);
+    const conversation = [
+      ...messages.slice(1).map(({ sender, text }) => ({ sender, text })),
+      { sender: 'user' as const, text: query },
+    ];
 
-    setTimeout(() => {
-      const response = generateAIResponse(query);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: conversation, context: buildContext() }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const reason = result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
+          ? result.error
+          : `Chat request failed with status ${response.status}`;
+        throw new Error(reason);
+      }
+      if (!result || typeof result !== 'object' || !('text' in result) || typeof result.text !== 'string') {
+        throw new Error('Chat API returned an invalid response');
+      }
+      setIsGeminiAvailable(true);
+      setOfflineReason('');
       const aiMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
+        id: `msg-${Date.now()}-ai`,
+        sender: 'ai',
+        text: result.text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        dataPoints: 'dataPoints' in result && Array.isArray(result.dataPoints)
+          ? result.dataPoints
+          : undefined,
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown chat API error';
+      console.warn('AgriAI is using offline mode:', reason);
+      setIsGeminiAvailable(false);
+      setOfflineReason(reason);
+      const response = generateOfflineAnswer(query);
+      const aiMsg: ChatMessage = {
+        id: `msg-${Date.now()}-ai`,
         sender: 'ai',
         text: response.text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         dataPoints: response.dataPoints,
       };
       setMessages((prev) => [...prev, aiMsg]);
+    } finally {
       setIsTyping(false);
-    }, 600);
+    }
   };
 
   return (
@@ -178,10 +252,15 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-['Space_Grotesk']">
                 AI Assistant
               </h2>
-              {/* Status: Online (Mandated by prompt) */}
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#EAF8EF] text-[#159947] text-xs font-bold border border-[#159947]/30">
-                <span className="w-2 h-2 rounded-full bg-[#159947] animate-pulse" />
-                Status: Online
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                isGeminiAvailable
+                  ? 'bg-[#EAF8EF] text-[#159947] border-[#159947]/30'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  isGeminiAvailable ? 'bg-[#159947] animate-pulse' : 'bg-amber-500'
+                }`} />
+                Status: Ready
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -191,9 +270,16 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-            Gemini API Ready Architecture
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[11px] font-semibold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              {isGeminiAvailable ? 'Powered by Gemini' : 'Offline mode (Gemini unavailable)'}
+            </span>
+            {!isGeminiAvailable && offlineReason && (
+              <span className="max-w-xs text-right text-[10px] text-amber-700" title={offlineReason}>
+                Offline: {offlineReason}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -282,7 +368,8 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             <button
               key={idx}
               onClick={() => handleSendMessage(q)}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-100 hover:bg-[#EAF8EF] hover:text-[#159947] hover:border-[#159947]/30 border border-slate-200/80 text-slate-700 whitespace-nowrap transition-colors cursor-pointer"
+              disabled={isTyping}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-100 hover:bg-[#EAF8EF] hover:text-[#159947] hover:border-[#159947]/30 border border-slate-200/80 text-slate-700 whitespace-nowrap transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {q}
             </button>
@@ -303,6 +390,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              disabled={isTyping}
               placeholder="Ask me anything about your farm..."
               className="flex-1 text-xs sm:text-sm py-3 px-4 rounded-xl border border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-[#159947]/30 focus:border-[#159947]"
             />
@@ -310,7 +398,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             <button
               id="ai-assistant-send-btn"
               type="submit"
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || isTyping}
               className="px-5 py-3 rounded-xl bg-[#159947] hover:bg-[#13883f] text-white font-bold text-xs sm:text-sm shadow-md shadow-[#159947]/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-40"
             >
               <span>Send</span>

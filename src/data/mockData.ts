@@ -1,4 +1,4 @@
-import { Farm, SensorData, AIRecommendation, DecisionLogEntry, WeatherHourly, WeatherDaily, AlertItem, ChatMessage } from '../types';
+import { Farm, SensorData, AIRecommendation, DecisionLogEntry, WeatherHourly, WeatherDaily, AlertItem } from '../types';
 
 export const INITIAL_FARMS: Farm[] = [
   {
@@ -478,7 +478,7 @@ export const INITIAL_ALERTS: AlertItem[] = [
     id: 'alert-3',
     type: 'info',
     title: 'High Rainfall Forecast',
-    message: '80% chance of rain in the next 6 hours.',
+    message: 'Rain forecast alert. Check current weather for the latest probability.',
     timestamp: '1 hour ago',
     read: false,
     primaryActionLabel: 'View Weather',
@@ -491,42 +491,6 @@ export const INITIAL_ALERTS: AlertItem[] = [
     timestamp: '3 hours ago',
     read: true,
     primaryActionLabel: 'View Diagnostics',
-  },
-];
-
-export const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
-  {
-    id: 'chat-1',
-    sender: 'user',
-    text: 'Should I irrigate the tomato field today?',
-    timestamp: '10:12 AM',
-  },
-  {
-    id: 'chat-2',
-    sender: 'ai',
-    text: 'Irrigation is currently not recommended. Rainfall probability is 80% within the next six hours. Waiting could save approximately 320 liters of water.',
-    timestamp: '10:12 AM',
-    dataPoints: [
-      { label: 'Rain Probability', value: '80%' },
-      { label: 'Est. Water Saved', value: '320 Liters' },
-      { label: 'Zone 3 Moisture', value: '28% (Above critical 20%)' },
-    ],
-  },
-  {
-    id: 'chat-3',
-    sender: 'user',
-    text: "What happens if it doesn't rain?",
-    timestamp: '10:14 AM',
-  },
-  {
-    id: 'chat-4',
-    sender: 'ai',
-    text: 'I will reassess soil moisture and weather conditions. If soil moisture falls below 22%, I will recommend irrigation and send an alert.',
-    timestamp: '10:14 AM',
-    dataPoints: [
-      { label: 'Fallback Threshold', value: '22%' },
-      { label: 'Telemetry Poll Frequency', value: 'Every 5 minutes' },
-    ],
   },
 ];
 

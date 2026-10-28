@@ -465,6 +465,11 @@ export default function App() {
 
           {currentView === 'ai-assistant' && (
             <AIAssistantView
+              key={`${currentFarm.id}-${selectedZone.id}`}
+              farm={currentFarm}
+              recommendation={recommendation}
+              weather={weather}
+              alerts={alerts}
               sensorData={sensorData}
               selectedZone={selectedZone}
             />
