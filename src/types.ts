@@ -154,4 +154,6 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   dataPoints?: Array<{ label: string; value: string }>;
+  model?: string;
+  retryQuestion?: string;
 }

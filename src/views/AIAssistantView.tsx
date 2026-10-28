@@ -36,7 +36,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isGeminiAvailable, setIsGeminiAvailable] = useState(true);
-  const [offlineReason, setOfflineReason] = useState('');
+  const [activeModel, setActiveModel] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -172,7 +172,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
     };
   };
 
-  const handleSendMessage = async (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string, retry = false) => {
     const query = (textToSend ?? inputText).trim();
     if (!query.trim()) return;
 
@@ -183,7 +183,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    if (!retry) setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setIsTyping(true);
     const conversation = [
@@ -208,22 +208,22 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
         throw new Error('Chat API returned an invalid response');
       }
       setIsGeminiAvailable(true);
-      setOfflineReason('');
+      setActiveModel('model' in result && typeof result.model === 'string' ? result.model : '');
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now()}-ai`,
         sender: 'ai',
         text: result.text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        model: 'model' in result && typeof result.model === 'string' ? result.model : undefined,
         dataPoints: 'dataPoints' in result && Array.isArray(result.dataPoints)
           ? result.dataPoints
           : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Unknown chat API error';
-      console.warn('AgriAI is using offline mode:', reason);
+      console.warn('AgriAI is using offline mode:', error);
       setIsGeminiAvailable(false);
-      setOfflineReason(reason);
+      setActiveModel('');
       const response = generateOfflineAnswer(query);
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now()}-ai`,
@@ -231,6 +231,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
         text: response.text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         dataPoints: response.dataPoints,
+        retryQuestion: query,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } finally {
@@ -272,11 +273,13 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
         <div className="flex items-center gap-2">
           <div className="flex flex-col items-end gap-1">
             <span className="text-[11px] font-semibold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-              {isGeminiAvailable ? 'Powered by Gemini' : 'Offline mode (Gemini unavailable)'}
+              {isGeminiAvailable
+                ? `Powered by Gemini${activeModel ? ` (${activeModel})` : ''}`
+                : 'Offline mode (Gemini unavailable)'}
             </span>
-            {!isGeminiAvailable && offlineReason && (
-              <span className="max-w-xs text-right text-[10px] text-amber-700" title={offlineReason}>
-                Offline: {offlineReason}
+            {!isGeminiAvailable && (
+              <span className="max-w-xs text-right text-[10px] text-amber-700">
+                Offline: Gemini busy — retrying next message
               </span>
             )}
           </div>
@@ -329,6 +332,17 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
                           </div>
                         ))}
                       </div>
+                    )}
+                    {isAI && msg.retryQuestion && (
+                      <button
+                        type="button"
+                        onClick={() => handleSendMessage(msg.retryQuestion, true)}
+                        disabled={isTyping}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Retry with AI
+                      </button>
                     )}
                   </div>
 
