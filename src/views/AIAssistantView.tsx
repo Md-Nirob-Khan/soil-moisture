@@ -37,6 +37,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
   const [isTyping, setIsTyping] = useState(false);
   const [isGeminiAvailable, setIsGeminiAvailable] = useState(true);
   const [activeModel, setActiveModel] = useState('');
+  const [offlineReason, setOfflineReason] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -209,6 +210,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
       }
       setIsGeminiAvailable(true);
       setActiveModel('model' in result && typeof result.model === 'string' ? result.model : '');
+      setOfflineReason('');
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now()}-ai`,
         sender: 'ai',
@@ -224,6 +226,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
       console.warn('AgriAI is using offline mode:', error);
       setIsGeminiAvailable(false);
       setActiveModel('');
+      setOfflineReason(error instanceof Error ? error.message : 'Unknown Gemini error');
       const response = generateOfflineAnswer(query);
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now()}-ai`,
@@ -279,7 +282,7 @@ export const AIAssistantView: React.FC<AIAssistantViewProps> = ({
             </span>
             {!isGeminiAvailable && (
               <span className="max-w-xs text-right text-[10px] text-amber-700">
-                Offline: Gemini busy — retrying next message
+                Offline: {offlineReason}
               </span>
             )}
           </div>

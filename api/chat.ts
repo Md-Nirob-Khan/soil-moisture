@@ -25,6 +25,11 @@ Return only JSON in this shape: {"text":"...","dataPoints":[{"label":"...","valu
 const REQUEST_TIMEOUT_MS = 18_000;
 let flashModelsPromise: Promise<string[]> | undefined;
 
+interface GeminiFailure {
+  statusCode: number;
+  message: string;
+}
+
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -133,6 +138,25 @@ function retryAfterMs(response: Response): number | undefined {
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 500 || status === 503;
+}
+
+function getGeminiFailure(statusCode: number, statusText: string, rawBody: string): GeminiFailure {
+  let message = rawBody || statusText || 'Gemini returned an empty error response';
+
+  try {
+    const body: unknown = JSON.parse(rawBody);
+    if (isRecord(body) && isRecord(body.error)) {
+      if (typeof body.error.message === 'string') message = body.error.message;
+      if (typeof body.error.status === 'string') {
+        message = `${body.error.status}: ${message}`;
+      }
+    }
+  } catch {
+    // Preserve the upstream body if it is not JSON.
+  }
+
+  if (statusCode < 400 || statusCode > 599) statusCode = 502;
+  return { statusCode, message };
 }
 
 async function waitForRetry(response: Response, retryIndex: number, deadline: number): Promise<boolean> {
@@ -270,17 +294,31 @@ export default async function handler(req: ChatRequest, res: ServerResponse): Pr
   const deadline = Date.now() + REQUEST_TIMEOUT_MS;
   try {
     const availableModelsPromise = discoverFlashModels(apiKey, deadline);
-    const models = [
+    const preferredModels = [
       process.env.GEMINI_MODEL,
+      'gemini-flash-lite-latest',
       'gemini-3.5-flash-lite',
       'gemini-flash-latest',
-      'gemini-flash-lite-latest',
-      ...(await availableModelsPromise),
     ].filter((model, index, list): model is string =>
       typeof model === 'string' && model.length > 0 && list.indexOf(model) === index
     );
 
-    for (const [index, model] of models.entries()) {
+    let models = preferredModels;
+    let lastFailure: GeminiFailure | undefined;
+    let triedDiscoveredModels = false;
+    for (let index = 0; Date.now() < deadline; index += 1) {
+      if (index >= models.length) {
+        if (triedDiscoveredModels) break;
+        triedDiscoveredModels = true;
+        const discoveredModels = await availableModelsPromise;
+        models = [
+          ...models,
+          ...discoveredModels.filter((model) => !models.includes(model)),
+        ];
+        if (index >= models.length) break;
+      }
+
+      const model = models[index];
       if (Date.now() >= deadline) break;
       if (index > 0) console.warn(`Gemini fallback: trying model ${model}`);
 
@@ -289,6 +327,10 @@ export default async function handler(req: ChatRequest, res: ServerResponse): Pr
         response = await requestModelWithRetries(model, apiKey, contents, deadline);
       } catch (error) {
         console.error(`Gemini model ${model} request failed:`, error);
+        lastFailure = {
+          statusCode: 502,
+          message: error instanceof Error ? error.message : 'Gemini request failed',
+        };
         continue;
       }
 
@@ -302,9 +344,14 @@ export default async function handler(req: ChatRequest, res: ServerResponse): Pr
 
       const errorText = await response.text();
       console.error(`Gemini model ${model} failed (${response.status}): ${errorText}`);
+      lastFailure = getGeminiFailure(response.status, response.statusText, errorText);
     }
 
-    sendJson(res, 503, { error: 'Gemini is busy right now, please try again' });
+    const failure = lastFailure ?? {
+      statusCode: 503,
+      message: 'Gemini is busy right now, please try again',
+    };
+    sendJson(res, failure.statusCode, { error: failure.message });
   } catch (error) {
     console.error('AgriAI chat request failed:', error);
     sendJson(res, 503, { error: 'Gemini is busy right now, please try again' });
